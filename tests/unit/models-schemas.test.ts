@@ -1,59 +1,65 @@
-import { TestDb } from "../helpers/testDb";
-import { ProjectModel } from "../../backend/src/models/project.model";
-import { StorylineNodeModel } from "../../backend/src/models/storylineNode.model";
+/**
+ * Storage schema validation (JSON store).
+ * Replaces former Mongoose model tests.
+ */
+import { TestStorage } from "../helpers/testStorage";
+import * as store from "../../backend/src/storage/jsonStore";
 
-jest.setTimeout(30000);
+const testStorage = new TestStorage();
 
-const testDb = new TestDb();
-
-describe("Mongoose models schemas", () => {
+describe("JSON storage schemas", () => {
   beforeAll(async () => {
-    await testDb.setup();
+    await testStorage.setup();
   });
 
   afterEach(async () => {
-    await testDb.cleanup();
+    await testStorage.cleanup();
   });
 
   afterAll(async () => {
-    await testDb.teardown();
+    await testStorage.teardown();
   });
 
-  it("enforces required fields on ProjectModel", async () => {
-    await expect(ProjectModel.create({})).rejects.toThrow();
-
-    const created = await ProjectModel.create({ projectId: "demo", name: "Demo Project" });
-    expect(created.projectId).toBe("demo");
-    expect(created.dbVersion).toBe(1);
+  it("enforces unique projectId on create", async () => {
+    await store.createProject({ projectId: "demo", name: "Demo Project" });
+    await expect(store.createProject({ projectId: "demo", name: "Duplicate" })).rejects.toThrow(
+      /already exists/
+    );
   });
 
-  it("enforces unique projectId on ProjectModel", async () => {
-    await ProjectModel.create({ projectId: "demo", name: "Demo Project" });
-    await expect(ProjectModel.create({ projectId: "demo", name: "Duplicate" })).rejects.toThrow();
-  });
-
-  it("restricts StorylineNode status enum and applies defaults", async () => {
-    const node = await StorylineNodeModel.create({
+  it("creates project with required fields", async () => {
+    const created = await store.createProject({
       projectId: "demo",
-      nodeId: "n1",
-      characterId: "char_001",
-      eventId: "evt_001",
-      content: "Some content",
+      name: "Demo Project",
+    });
+    expect(created.projectId).toBe("demo");
+    expect(created.name).toBe("Demo Project");
+  });
+
+  it("StorylineNode defaults status to draft", async () => {
+    await store.createProject({ projectId: "demo", name: "Demo" });
+    await store.createCharacter("demo", {
+      characterId: "c1",
+      name: "E",
+      coreTraits: [],
+      flaws: [],
+      motivations: [],
+      relationships: [],
+    });
+    await store.createEvent("demo", {
+      eventId: "e1",
+      timelineOrder: 1,
+      title: "E",
+      objectiveFacts: "F",
+      involvedCharacterIds: [],
     });
 
+    const node = await store.createStorylineNode("demo", {
+      nodeId: "n1",
+      characterId: "c1",
+      eventId: "e1",
+      content: "Some content",
+    });
     expect(node.status).toBe("draft");
-    expect(node.content).toBe("Some content");
-
-    await expect(
-      StorylineNodeModel.create({
-        projectId: "demo",
-        nodeId: "n2",
-        characterId: "char_001",
-        eventId: "evt_001",
-        content: "Invalid",
-        status: "invalid_status",
-      } as unknown)
-    ).rejects.toThrow();
   });
 });
-

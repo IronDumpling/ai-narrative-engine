@@ -8,7 +8,8 @@
   - **前端界面**：纯 React SPA，用于管理 Project、编辑 Context DB、查看/管理 Storyline、触发 Agent 调用。
 - **技术栈约定**：
   - **后端**：Node.js + TypeScript（Express/Fastify 级别简洁 HTTP 框架）。
-  - **主数据存储**：基于 JSON 文档的数据库（拟用 MongoDB / 兼容协议，如本地可用 MongoDB + Mongoose 或类似 ODM）。
+  - **主数据存储**：**本地 JSON 文件存储**（`backend/data/`），便于查看、调试与快速验证；无需 Docker/MongoDB 即可运行。
+  - **版本管理与迭代**：设计保留（见第三节），但当前实现暂未启用，后续再做。
   - **向量库**：Phase 1 不接入，结构化路由优先。
   - **前端**：Vite + React SPA。
 
@@ -17,14 +18,13 @@
 ## 一、项目整体结构设计
 
 - **后端项目结构（例如 `backend/`）**：
-  - `src/config/`：环境配置、DB 连接、全局常量（如版本号前缀策略）。
-  - `src/models/`：Mongo/ODM 模型定义。
-  - `src/repositories/`：对模型的封装（CRUD + 查询组合，隐藏存储细节）。
+  - `src/config/`：环境配置、全局常量（如版本号前缀策略）。
+  - `src/storage/`：本地 JSON 存储层（`jsonStore.ts`）：项目列表、单项目数据（characters、worldRules、events、storylineNodes）的读写与隔离。
   - `src/services/`：
     - `projectService`：Project 层逻辑（隔离上下文）。
     - `contextDbService`：Character / World / Event 的业务逻辑。
     - `storylineService`：Storyline Node CRUD + 版本检查。
-    - `versioningService`：统一处理 `DB_Version`、变更记录、冲突标记。
+    - `versioningService`：统一处理 `DB_Version`、变更记录、冲突标记（**预留，当前未实现**）。
     - `contextRouterService`：根据请求拼装给 Agents 的 JSON payload。
   - `src/routes/`：HTTP API（REST 风格，后续可加 OpenAPI/Swagger）。
   - `src/agents/`：与 LLM API 对接的适配层（Agent A / B 的调用封装），Phase 1 可用 mock 或接口占位。
@@ -43,7 +43,14 @@
 
 ---
 
-## 二、数据模型设计（Mongo / JSON 文档友好）
+## 二、数据模型设计（本地 JSON 存储）
+
+### 存储结构
+
+- **`data/projects.json`**：项目列表 `[{ projectId, name, description }]`。
+- **`data/projects/{projectId}.json`**：每个项目的完整数据，包含：
+  - `characters`、`worldRules`、`events`、`storylineNodes` 数组。
+  - 便于直接打开查看、备份与迁移。
 
 ### 1. Project 模型
 
@@ -51,8 +58,7 @@
   - `projectId`: string（可读 ID / slug）。
   - `name`: string。
   - `description`: string。
-  - `dbVersion`: number（例如 1, 2, 3，对应 `DB_Version`）。
-  - `createdAt`, `updatedAt`。
+  - `dbVersion`: number（**预留**，版本管理实现后启用）。
 - **约束**：
   - 所有下级实体（Character, WorldRule, Event, StorylineNode）都必须携带 `projectId`，通过查询层面强制隔离。
 
@@ -98,7 +104,9 @@
 
 ---
 
-## 三、DB 版本管理 & 变更追踪设计
+## 三、DB 版本管理 & 变更追踪设计（**预留，当前未实现**）
+
+> 版本管理、变更日志与 `needs_revision` 级联设计保留，后续实现时再接入。
 
 ### 1. 版本号与哈希策略
 
@@ -228,25 +236,24 @@
 
 ---
 
-## 六、数据库版本管理与迁移策略
+## 六、数据存储与备份策略
 
-### 1. Mongo 结构版本管理
+### 1. 本地 JSON 存储
 
-- **Schema 级版本**：
-  - 在代码层面（Mongoose Schema 或自定义 validator）约束字段结构，所有变更通过 Git 管理。
-- **数据级版本（业务语义）**：
-  - 通过 `Project.dbVersion` + `db_change_logs` + `StorylineNode.versionHash` 管理。
+- **目录结构**：
+  - `backend/data/projects.json`：项目列表。
+  - `backend/data/projects/{projectId}.json`：单项目数据。
+- **环境变量**（可选）：
+  - `DATA_DIR`：数据目录路径，默认 `backend/data`。
+- **备份**：直接复制 `data/` 目录即可；单项目 JSON 可单独导出/导入。
 
 ### 2. 环境与备份策略（适配 solo-dev）
 
 - 本地开发：
-  - 使用 `docker-compose` 启动 MongoDB 容器，或使用本地安装。
-  - 提供简单的 `scripts`：
-    - `npm run db:seed`：初始化 Demo Project（例如文档中的 Elias 场景）。
-    - `npm run db:export` / `npm run db:import`：导出/导入某个 Project 的 JSON 数据，用于备份与迁移。
+  - 无需 Docker/MongoDB，直接 `cd backend && npm run dev` 即可启动。
+  - 数据文件可直接打开查看、编辑。
 - 简单云部署：
-  - 推荐使用托管 Mongo（MongoDB Atlas）或云厂商文档库服务。
-  - 在 README 中记录 `.env` 示例（DB 连接串、LLM API Key）。
+  - 可将 `data/` 挂载到持久化卷；或后续迁移到 MongoDB/PostgreSQL 等。
 
 ---
 
@@ -256,14 +263,14 @@
   - 建立 `backend/` TypeScript + Express/Fastify 脚手架。
   - 建立 `frontend/` Vite + React 项目。
   - 在根目录配置基础 README 与工作流说明。
-2. **实现 Mongo 连接与数据模型**：
-  - 配置 Mongo 连接（本地或 Docker）。
-  - 定义 Project / Character / WorldRule / Event / StorylineNode / DbChangeLog 模型。
+2. **实现本地 JSON 存储**：
+  - 实现 `backend/src/storage/jsonStore.ts`：项目列表与单项目数据读写。
+  - 定义 Project / Character / WorldRule / Event / StorylineNode 类型（`storage/types.ts`）。
 3. **实现基础 CRUD API**：
-  - Project CRUD（含 `dbVersion` 字段维护）。
-  - Character / WorldRule / Event CRUD（写操作触发版本递增与变更日志）。
-  - StorylineNode CRUD（含 `status`、`versionHash`）。
-4. **实现版本管理逻辑**：
+  - Project CRUD。
+  - Character / WorldRule / Event CRUD。
+  - StorylineNode CRUD（含 `status`、`lastCheckResult`）。
+4. **实现版本管理逻辑**（**预留**）：
   - 封装 `versioningService`：
     - 统一入口：当 Context DB 写操作发生时，调用 `incrementDbVersionAndLogChanges()`。
     - 根据变更查找关联 StorylineNode 并标记 `needs_revision`。
@@ -296,28 +303,19 @@ flowchart TD
   frontend --> backendAPI[BackendAPI]
 
   subgraph backend[Backend]
-    backendAPI --> projectService[ProjectService]
-    backendAPI --> contextDbService[ContextDbService]
-    backendAPI --> storylineService[StorylineService]
-    backendAPI --> contextRouterService[ContextRouter]
+    backendAPI --> engineRoutes[EngineRoutes]
+    engineRoutes --> contextRouterService[ContextRouter]
     contextRouterService --> agents[AgentsLayer]
+    engineRoutes --> jsonStore[JSONStore]
   end
 
-  subgraph db[MongoDB]
-    projectsColl[Projects]
-    charactersColl[Characters]
-    worldRulesColl[WorldRules]
-    eventsColl[Events]
-    storyNodesColl[StorylineNodes]
-    changeLogsColl[DbChangeLogs]
+  subgraph storage[LocalJSONStorage]
+    projectsFile[projects.json]
+    projectData[projects/projectId.json]
   end
 
-  projectService --> projectsColl
-  contextDbService --> charactersColl
-  contextDbService --> worldRulesColl
-  contextDbService --> eventsColl
-  storylineService --> storyNodesColl
-  storylineService --> changeLogsColl
+  jsonStore --> projectsFile
+  jsonStore --> projectData
 
   agents -->|PlotBridger / LogicChecker| backendAPI
 ```

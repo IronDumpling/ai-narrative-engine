@@ -1,23 +1,7 @@
-import { CharacterModel } from "../models/character.model";
-import { WorldRuleModel } from "../models/worldRule.model";
-import { EventModel } from "../models/event.model";
-import { StorylineNodeModel } from "../models/storylineNode.model";
+import * as store from "../storage/jsonStore";
+import type { BridgerPayload, ValidatorPayload } from "./contextRouterService.types";
 
-export interface BridgerPayload {
-  task: string;
-  character_context: unknown;
-  world_context: unknown[];
-  start_event: string;
-  end_event: string;
-  existing_content?: string;
-}
-
-export interface ValidatorPayload {
-  task: string;
-  character_traits: string[];
-  world_rules: string[];
-  text_to_verify: string;
-}
+export type { BridgerPayload, ValidatorPayload };
 
 export async function buildBridgerPayloadForEvents(options: {
   projectId: string;
@@ -28,10 +12,10 @@ export async function buildBridgerPayloadForEvents(options: {
   const { projectId, characterId, startEventId, endEventId } = options;
 
   const [character, worldRules, startEvent, endEvent] = await Promise.all([
-    CharacterModel.findOne({ projectId, characterId }).lean().exec(),
-    WorldRuleModel.find({ projectId }).lean().exec(),
-    EventModel.findOne({ projectId, eventId: startEventId }).lean().exec(),
-    EventModel.findOne({ projectId, eventId: endEventId }).lean().exec(),
+    store.findCharacters(projectId).then((list) => list.find((c) => c.characterId === characterId)),
+    store.findWorldRules(projectId),
+    store.findEvents(projectId).then((list) => list.find((e) => e.eventId === startEventId)),
+    store.findEvents(projectId).then((list) => list.find((e) => e.eventId === endEventId)),
   ]);
 
   if (!character) {
@@ -55,7 +39,7 @@ export async function buildBridgerPayloadForNode(options: {
   nodeId: string;
 }): Promise<BridgerPayload> {
   const { projectId, nodeId } = options;
-  const node = await StorylineNodeModel.findOne({ projectId, nodeId }).lean().exec();
+  const node = await store.findStorylineNode(projectId, nodeId);
   if (!node) {
     throw new Error(`StorylineNode not found for projectId=${projectId}, nodeId=${nodeId}`);
   }
@@ -79,11 +63,12 @@ export async function buildValidatorPayload(options: {
 }): Promise<ValidatorPayload> {
   const { projectId, characterId, worldRuleIds, textToVerify } = options;
 
-  const [character, worldRulesAll] = await Promise.all([
-    CharacterModel.findOne({ projectId, characterId }).lean().exec(),
-    WorldRuleModel.find({ projectId }).lean().exec(),
+  const [characters, worldRulesAll] = await Promise.all([
+    store.findCharacters(projectId),
+    store.findWorldRules(projectId),
   ]);
 
+  const character = characters.find((c) => c.characterId === characterId);
   if (!character) {
     throw new Error(`Character not found for projectId=${projectId}, characterId=${characterId}`);
   }
@@ -103,4 +88,3 @@ export async function buildValidatorPayload(options: {
     text_to_verify: textToVerify,
   };
 }
-

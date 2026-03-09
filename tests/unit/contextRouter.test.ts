@@ -1,34 +1,29 @@
-import { TestDb } from "../helpers/testDb";
+import { TestStorage } from "../helpers/testStorage";
+import * as store from "../../backend/src/storage/jsonStore";
 import {
   buildBridgerPayloadForEvents,
   buildBridgerPayloadForNode,
   buildValidatorPayload,
 } from "../../backend/src/services/contextRouterService";
-import { CharacterModel } from "../../backend/src/models/character.model";
-import { WorldRuleModel } from "../../backend/src/models/worldRule.model";
-import { EventModel } from "../../backend/src/models/event.model";
-import { StorylineNodeModel } from "../../backend/src/models/storylineNode.model";
 
-jest.setTimeout(60000);
-
-const testDb = new TestDb();
+const testStorage = new TestStorage();
 
 describe("contextRouterService", () => {
   beforeAll(async () => {
-    await testDb.setup();
+    await testStorage.setup();
   });
 
   afterEach(async () => {
-    await testDb.cleanup();
+    await testStorage.cleanup();
   });
 
   afterAll(async () => {
-    await testDb.teardown();
+    await testStorage.teardown();
   });
 
   beforeEach(async () => {
-    await CharacterModel.create({
-      projectId: "demo",
+    await store.createProject({ projectId: "demo", name: "Demo Project" });
+    await store.createCharacter("demo", {
       characterId: "char_001",
       name: "Elias",
       coreTraits: ["Pragmatic", "Suspicious"],
@@ -36,17 +31,13 @@ describe("contextRouterService", () => {
       motivations: [],
       relationships: [],
     });
-
-    await WorldRuleModel.create({
-      projectId: "demo",
+    await store.createWorldRule("demo", {
       ruleId: "rule_001",
       category: "Physics_Magic",
       description: "Using neural-implants drains physical stamina exponentially.",
       strictnessLevel: "High",
     });
-
-    await EventModel.create({
-      projectId: "demo",
+    await store.createEvent("demo", {
       eventId: "evt_001",
       timelineOrder: 10,
       title: "The Server Room Breach",
@@ -71,12 +62,12 @@ describe("contextRouterService", () => {
   });
 
   it("builds Bridger payload for node including existing content", async () => {
-    await StorylineNodeModel.create({
-      projectId: "demo",
+    await store.createStorylineNode("demo", {
       nodeId: "story_1",
       characterId: "char_001",
       eventId: "evt_001",
       content: "Existing content",
+      status: "draft",
     });
 
     const payload = await buildBridgerPayloadForNode({
@@ -101,4 +92,3 @@ describe("contextRouterService", () => {
     expect(payload.text_to_verify).toBe("Some text");
   });
 });
-

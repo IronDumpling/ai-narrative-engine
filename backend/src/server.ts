@@ -1,11 +1,8 @@
 import http from "http";
 import { createApp } from "./app";
-import { connectMongo } from "./config/db";
 import { ENV } from "./config/env";
 
 async function bootstrap() {
-  await connectMongo();
-
   const app = createApp();
   const server = http.createServer(app);
 

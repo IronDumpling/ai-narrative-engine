@@ -1,50 +1,44 @@
 import request from "supertest";
 
 import { createApp } from "../../backend/src/app";
-import { TestDb } from "../helpers/testDb";
-import { ProjectModel } from "../../backend/src/models/project.model";
+import { TestStorage } from "../helpers/testStorage";
+import * as store from "../../backend/src/storage/jsonStore";
 
-const testDb = new TestDb();
+const testStorage = new TestStorage();
 const app = createApp();
 
-describe("Context DB CRUD + dbVersion integration", () => {
+describe("Context DB CRUD integration", () => {
   beforeAll(async () => {
-    await testDb.setup();
+    await testStorage.setup();
   });
 
   afterEach(async () => {
-    await testDb.cleanup();
+    await testStorage.cleanup();
   });
 
   afterAll(async () => {
-    await testDb.teardown();
+    await testStorage.teardown();
   });
 
-  async function getProject(projectId: string) {
-    return ProjectModel.findOne({ projectId }).lean().exec();
-  }
-
-  it("creates a project with initial dbVersion = 1", async () => {
+  it("creates a project", async () => {
     const res = await request(app)
       .post("/api/projects")
       .send({ projectId: "demo", name: "Demo Project" })
       .expect(201);
 
     expect(res.body.projectId).toBe("demo");
-    const project = await getProject("demo");
-    expect(project?.dbVersion).toBe(1);
+    expect(res.body.name).toBe("Demo Project");
+
+    const projects = await store.listProjects();
+    expect(projects.some((p) => p.projectId === "demo")).toBe(true);
   });
 
-  it("increments dbVersion on Character / WorldRule / Event mutations", async () => {
+  it("performs Character / WorldRule / Event CRUD", async () => {
     await request(app)
       .post("/api/projects")
       .send({ projectId: "demo", name: "Demo Project" })
       .expect(201);
 
-    let project = await getProject("demo");
-    expect(project?.dbVersion).toBe(1);
-
-    // Create a character
     await request(app)
       .post("/api/projects/demo/characters")
       .send({
@@ -56,10 +50,7 @@ describe("Context DB CRUD + dbVersion integration", () => {
         relationships: [],
       })
       .expect(201);
-    project = await getProject("demo");
-    expect(project?.dbVersion).toBe(2);
 
-    // Create a world rule
     await request(app)
       .post("/api/projects/demo/world-rules")
       .send({
@@ -69,10 +60,7 @@ describe("Context DB CRUD + dbVersion integration", () => {
         strictnessLevel: "High",
       })
       .expect(201);
-    project = await getProject("demo");
-    expect(project?.dbVersion).toBe(3);
 
-    // Create an event
     await request(app)
       .post("/api/projects/demo/events")
       .send({
@@ -83,21 +71,16 @@ describe("Context DB CRUD + dbVersion integration", () => {
         involvedCharacterIds: ["char_001"],
       })
       .expect(201);
-    project = await getProject("demo");
-    expect(project?.dbVersion).toBe(4);
 
-    // Update character
     await request(app)
       .put("/api/projects/demo/characters/char_001")
       .send({ coreTraits: ["Pragmatic", "Suspicious"] })
       .expect(200);
-    project = await getProject("demo");
-    expect(project?.dbVersion).toBe(5);
 
-    // Delete event
     await request(app).delete("/api/projects/demo/events/evt_001").expect(204);
-    project = await getProject("demo");
-    expect(project?.dbVersion).toBe(6);
+
+    const events = await store.findEvents("demo");
+    expect(events.length).toBe(0);
   });
 
   it("supports basic StorylineNode CRUD and status filtering", async () => {
@@ -106,7 +89,6 @@ describe("Context DB CRUD + dbVersion integration", () => {
       .send({ projectId: "demo", name: "Demo Project" })
       .expect(201);
 
-    // Create storyline nodes
     await request(app)
       .post("/api/projects/demo/storyline-nodes")
       .send({
@@ -141,4 +123,3 @@ describe("Context DB CRUD + dbVersion integration", () => {
     expect(needsRevisionRes.body[0].nodeId).toBe("story_2");
   });
 });
-

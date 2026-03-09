@@ -1,12 +1,6 @@
 import express from "express";
 
-import { ProjectModel } from "../models/project.model";
-import { CharacterModel } from "../models/character.model";
-import { WorldRuleModel } from "../models/worldRule.model";
-import { EventModel } from "../models/event.model";
-import { StorylineNodeModel } from "../models/storylineNode.model";
-import { incrementProjectVersionAndLogChanges, markAffectedStorylineNodes } from "../services/versioningService";
-import { EntityType } from "../models/dbChangeLog.model";
+import * as store from "../storage/jsonStore";
 import {
   buildBridgerPayloadForEvents,
   buildBridgerPayloadForNode,
@@ -17,7 +11,6 @@ import { callValidator } from "../agents/validatorClient";
 
 export const router = express.Router();
 
-// Helper to wrap async handlers
 function asyncHandler(fn: express.RequestHandler): express.RequestHandler {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
@@ -28,7 +21,7 @@ function asyncHandler(fn: express.RequestHandler): express.RequestHandler {
 router.get(
   "/projects",
   asyncHandler(async (_req, res) => {
-    const projects = await ProjectModel.find().lean().exec();
+    const projects = await store.listProjects();
     res.json(projects);
   })
 );
@@ -37,31 +30,17 @@ router.post(
   "/projects",
   asyncHandler(async (req, res) => {
     const { projectId, name, description } = req.body;
-    const created = await ProjectModel.create({
-      projectId,
-      name,
-      description,
-    });
+    const created = await store.createProject({ projectId, name, description });
     res.status(201).json(created);
   })
 );
-
-// CONTEXT DB HELPERS
-async function applyVersioningAndMarkNodes(
-  projectId: string,
-  entityType: EntityType,
-  entityIds: string[],
-  changeSummary?: string
-) {
-  const log = await incrementProjectVersionAndLogChanges(projectId, entityType, entityIds, changeSummary);
-  await markAffectedStorylineNodes(projectId, entityType, entityIds, log.toVersion);
-}
 
 // CHARACTERS
 router.get(
   "/projects/:projectId/characters",
   asyncHandler(async (req, res) => {
-    const characters = await CharacterModel.find({ projectId: req.params.projectId }).lean().exec();
+    const projectId = req.params.projectId as string;
+    const characters = await store.findCharacters(projectId);
     res.json(characters);
   })
 );
@@ -70,8 +49,8 @@ router.post(
   "/projects/:projectId/characters",
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
-    const created = await CharacterModel.create({ ...req.body, projectId });
-    await applyVersioningAndMarkNodes(projectId, "Character", [created.characterId], "Create character");
+    const { projectId: _p, ...body } = req.body;
+    const created = await store.createCharacter(projectId, body);
     res.status(201).json(created);
   })
 );
@@ -81,16 +60,11 @@ router.put(
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
     const characterId = req.params.characterId as string;
-    const updated = await CharacterModel.findOneAndUpdate(
-      { projectId, characterId },
-      req.body,
-      { new: true }
-    ).exec();
+    const updated = await store.updateCharacter(projectId, characterId, req.body);
     if (!updated) {
       res.sendStatus(404);
       return;
     }
-    await applyVersioningAndMarkNodes(projectId, "Character", [characterId], "Update character");
     res.json(updated);
   })
 );
@@ -100,12 +74,11 @@ router.delete(
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
     const characterId = req.params.characterId as string;
-    const deleted = await CharacterModel.findOneAndDelete({ projectId, characterId }).exec();
+    const deleted = await store.deleteCharacter(projectId, characterId);
     if (!deleted) {
       res.sendStatus(404);
       return;
     }
-    await applyVersioningAndMarkNodes(projectId, "Character", [characterId], "Delete character");
     res.sendStatus(204);
   })
 );
@@ -114,7 +87,8 @@ router.delete(
 router.get(
   "/projects/:projectId/world-rules",
   asyncHandler(async (req, res) => {
-    const rules = await WorldRuleModel.find({ projectId: req.params.projectId }).lean().exec();
+    const projectId = req.params.projectId as string;
+    const rules = await store.findWorldRules(projectId);
     res.json(rules);
   })
 );
@@ -123,8 +97,8 @@ router.post(
   "/projects/:projectId/world-rules",
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
-    const created = await WorldRuleModel.create({ ...req.body, projectId });
-    await applyVersioningAndMarkNodes(projectId, "WorldRule", [created.ruleId], "Create world rule");
+    const { projectId: _p, ...body } = req.body;
+    const created = await store.createWorldRule(projectId, body);
     res.status(201).json(created);
   })
 );
@@ -134,14 +108,11 @@ router.put(
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
     const ruleId = req.params.ruleId as string;
-    const updated = await WorldRuleModel.findOneAndUpdate({ projectId, ruleId }, req.body, {
-      new: true,
-    }).exec();
+    const updated = await store.updateWorldRule(projectId, ruleId, req.body);
     if (!updated) {
       res.sendStatus(404);
       return;
     }
-    await applyVersioningAndMarkNodes(projectId, "WorldRule", [ruleId], "Update world rule");
     res.json(updated);
   })
 );
@@ -151,12 +122,11 @@ router.delete(
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
     const ruleId = req.params.ruleId as string;
-    const deleted = await WorldRuleModel.findOneAndDelete({ projectId, ruleId }).exec();
+    const deleted = await store.deleteWorldRule(projectId, ruleId);
     if (!deleted) {
       res.sendStatus(404);
       return;
     }
-    await applyVersioningAndMarkNodes(projectId, "WorldRule", [ruleId], "Delete world rule");
     res.sendStatus(204);
   })
 );
@@ -165,7 +135,8 @@ router.delete(
 router.get(
   "/projects/:projectId/events",
   asyncHandler(async (req, res) => {
-    const events = await EventModel.find({ projectId: req.params.projectId }).lean().exec();
+    const projectId = req.params.projectId as string;
+    const events = await store.findEvents(projectId);
     res.json(events);
   })
 );
@@ -174,8 +145,8 @@ router.post(
   "/projects/:projectId/events",
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
-    const created = await EventModel.create({ ...req.body, projectId });
-    await applyVersioningAndMarkNodes(projectId, "Event", [created.eventId], "Create event");
+    const { projectId: _p, ...body } = req.body;
+    const created = await store.createEvent(projectId, body);
     res.status(201).json(created);
   })
 );
@@ -185,14 +156,11 @@ router.put(
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
     const eventId = req.params.eventId as string;
-    const updated = await EventModel.findOneAndUpdate({ projectId, eventId }, req.body, {
-      new: true,
-    }).exec();
+    const updated = await store.updateEvent(projectId, eventId, req.body);
     if (!updated) {
       res.sendStatus(404);
       return;
     }
-    await applyVersioningAndMarkNodes(projectId, "Event", [eventId], "Update event");
     res.json(updated);
   })
 );
@@ -202,12 +170,11 @@ router.delete(
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId as string;
     const eventId = req.params.eventId as string;
-    const deleted = await EventModel.findOneAndDelete({ projectId, eventId }).exec();
+    const deleted = await store.deleteEvent(projectId, eventId);
     if (!deleted) {
       res.sendStatus(404);
       return;
     }
-    await applyVersioningAndMarkNodes(projectId, "Event", [eventId], "Delete event");
     res.sendStatus(204);
   })
 );
@@ -216,19 +183,15 @@ router.delete(
 router.get(
   "/projects/:projectId/storyline-nodes",
   asyncHandler(async (req, res) => {
-    const { projectId } = req.params;
+    const projectId = req.params.projectId as string;
     const { status } = req.query;
-    const query: Record<string, unknown> = { projectId };
-    if (typeof status === "string") {
-      query.status = status;
-    }
-    const nodes = await StorylineNodeModel.find(query).lean().exec();
+    const filter = typeof status === "string" ? { status } : undefined;
+    const nodes = await store.findStorylineNodes(projectId, filter);
     res.json(nodes);
   })
 );
 
 // AGENTS: BRIDGER & VALIDATOR
-
 router.post(
   "/projects/:projectId/bridger",
   asyncHandler(async (req, res) => {
@@ -280,7 +243,7 @@ router.post(
 
     let text = textToVerify;
     if (!text && nodeId) {
-      const node = await StorylineNodeModel.findOne({ projectId, nodeId }).lean().exec();
+      const node = await store.findStorylineNode(projectId, nodeId);
       if (!node) {
         res.sendStatus(404);
         return;
@@ -311,17 +274,14 @@ router.post(
     const result = await callValidator(payload);
 
     if (nodeId) {
-      await StorylineNodeModel.findOneAndUpdate(
-        { projectId, nodeId },
-        {
-          status: result.pass ? "stable" : "needs_revision",
-          lastCheckResult: {
-            pass: result.pass,
-            violations: result.violations,
-            checkedAt: new Date(),
-          },
-        }
-      ).exec();
+      await store.updateStorylineNode(projectId, nodeId, {
+        status: result.pass ? "stable" : "needs_revision",
+        lastCheckResult: {
+          pass: result.pass,
+          violations: result.violations,
+          checkedAt: new Date().toISOString(),
+        },
+      });
     }
 
     res.json(result);
@@ -331,8 +291,9 @@ router.post(
 router.post(
   "/projects/:projectId/storyline-nodes",
   asyncHandler(async (req, res) => {
-    const projectId = req.params.projectId;
-    const created = await StorylineNodeModel.create({ ...req.body, projectId });
+    const projectId = req.params.projectId as string;
+    const { projectId: _p, ...body } = req.body;
+    const created = await store.createStorylineNode(projectId, body);
     res.status(201).json(created);
   })
 );
@@ -340,10 +301,9 @@ router.post(
 router.put(
   "/projects/:projectId/storyline-nodes/:nodeId",
   asyncHandler(async (req, res) => {
-    const { projectId, nodeId } = req.params;
-    const updated = await StorylineNodeModel.findOneAndUpdate({ projectId, nodeId }, req.body, {
-      new: true,
-    }).exec();
+    const projectId = req.params.projectId as string;
+    const nodeId = req.params.nodeId as string;
+    const updated = await store.updateStorylineNode(projectId, nodeId, req.body);
     if (!updated) {
       res.sendStatus(404);
       return;
@@ -351,4 +311,3 @@ router.put(
     res.json(updated);
   })
 );
-

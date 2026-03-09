@@ -1,24 +1,22 @@
 import request from "supertest";
 
 import { createApp } from "../../backend/src/app";
-import { TestDb } from "../helpers/testDb";
+import { TestStorage } from "../helpers/testStorage";
 
-jest.setTimeout(60000);
-
-const testDb = new TestDb();
+const testStorage = new TestStorage();
 const app = createApp();
 
 describe("Agents orchestrator (Bridger & Validator)", () => {
   beforeAll(async () => {
-    await testDb.setup();
+    await testStorage.setup();
   });
 
   afterEach(async () => {
-    await testDb.cleanup();
+    await testStorage.cleanup();
   });
 
   afterAll(async () => {
-    await testDb.teardown();
+    await testStorage.teardown();
   });
 
   beforeEach(async () => {
@@ -105,4 +103,3 @@ describe("Agents orchestrator (Bridger & Validator)", () => {
     expect(node.lastCheckResult).toBeDefined();
   });
 });
-
