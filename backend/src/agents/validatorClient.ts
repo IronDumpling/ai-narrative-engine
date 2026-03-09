@@ -81,16 +81,11 @@ async function callValidatorWithLLM(payload: ValidatorPayload): Promise<Validato
   return parseValidatorResponse(content);
 }
 
-function mockValidator(_payload: ValidatorPayload): ValidatorResult {
-  return {
-    pass: true,
-    violations: [],
-  };
-}
-
 export async function callValidator(payload: ValidatorPayload): Promise<ValidatorResult> {
   if (!ENV.openaiApiKey) {
-    return mockValidator(payload);
+    throw new Error(
+      "OPENAI_API_KEY is required for Validator. Configure it in backend/.env (see backend/.env.example)."
+    );
   }
 
   try {

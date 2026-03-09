@@ -79,18 +79,11 @@ async function callBridgerWithLLM(payload: BridgerPayload): Promise<BridgerResul
   return parseBridgerResponse(content);
 }
 
-function mockBridger(_payload: BridgerPayload): BridgerResult {
-  return {
-    bridging_steps: [
-      { step: 1, action: "Character evaluates the situation and prepares to act." },
-      { step: 2, action: "Character moves toward the next anchor event with clear intent." },
-    ],
-  };
-}
-
 export async function callBridger(payload: BridgerPayload): Promise<BridgerResult> {
   if (!ENV.openaiApiKey) {
-    return mockBridger(payload);
+    throw new Error(
+      "OPENAI_API_KEY is required for Bridger. Configure it in backend/.env (see backend/.env.example)."
+    );
   }
 
   try {
